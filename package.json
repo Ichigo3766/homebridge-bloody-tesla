@@ -1,7 +1,7 @@
 {
   "name": "homebridge-bloody-tesla",
   "version": "1.1.0",
-  "description": "Tesla support for Homebridge: https://github.com/bloodsucker99/homebridge-tesla-remote",
+  "description": "Tesla support for Homebridge: https://github.com/bloodsucker99/homebridge-bloody-tesla",
   "main": "src/index.js",
   "license": "MIT",
   "author": "Bloodsucker",
@@ -9,17 +9,14 @@
     "homebridge-plugin"
   ],
   "scripts": {
-    "npm-install": "npm install -g",
+    "npm-install": "npm i",
     "npm-publish": "npm publish",
-    "run-homebridge": "npm install -g && homebridge",
-    "goto-github": "open https://github.com/bloodsucker99/homebridge-my-tesla.git",
     "git-pull": "git pull",
-    "git-commit": "git add -A && git commit -m '-' && git push",
-    "goto-npm": "open https://www.npmjs.com/package/homebridge-bloody-tesla"
+    "git-commit": "git add -A && git commit -m '-' && git push"
   },
   "repository": {
     "type": "git",
-    "url": "git://github.com/bloodsucker99/homebridge-tesla-remote.git"
+    "url": "git://github.com/bloodsucker99/homebridge-bloody-tesla.git"
   },
   "engines": {
     "node": ">=0.12.0",
