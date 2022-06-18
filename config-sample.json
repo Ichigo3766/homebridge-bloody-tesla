@@ -1,0 +1,10 @@
+{
+    "accessories": [
+        {
+            "accessory": "Tesla",
+            "name": "My Model S",
+            "vin": "XXXXXXX",
+            "token": "Refresh Token"
+        }
+    ]
+}
