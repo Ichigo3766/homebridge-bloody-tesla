@@ -114,7 +114,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
       this.log('Setting conditioning to on = ' + on)
       try {
         const options = {
-          authToken: await this.getAuthToken(),
+          authToken: await this.token,
           vehicleID: await this.getVehicleId(),
         };
 
@@ -154,7 +154,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
     async setHornState(state, callback) {
       try {
         const options = {
-          authToken: await this.getAuthToken(),
+          authToken: await this.token,
           vehicleID: await this.getVehicleId(),
         };
         const res = await tjs.honkHornAsync(options);
@@ -180,7 +180,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
     async setLightsState(state, callback) {
       try {
         const options = {
-          authToken: await this.getAuthToken(),
+          authToken: await this.token,
           vehicleID: await this.getVehicleId(),
         };
         const res = await tjs.flashLightsAsync(options);
@@ -221,7 +221,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
       }
       try {
         const options = {
-          authToken: await this.getAuthToken(),
+          authToken: await this.token,
           vehicleID: await this.getVehicleId(),
         };
         const driveStateRes = await tjs.driveStateAsync(options);
@@ -299,7 +299,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
       this.log('Setting charging to on = ' + on)
       try {
         const options = {
-          authToken: await this.getAuthToken(),
+          authToken: await this.token,
           vehicleID: await this.getVehicleId(),
         };
         const res = on ? await tjs.startChargeAsync(options) : await tjs.stopChargeAsync(options);
@@ -330,7 +330,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
       this.log(`Setting temp to ${value} (${this.celsiusToFer(value)}F)`);
       try {
         const options = {
-          authToken: await this.getAuthToken(),
+          authToken: await this.token,
           vehicleID: await this.getVehicleId(),
         };
         const res = await tjs.setTempsAsync(options, value, value)
@@ -375,7 +375,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
       this.log("Setting climate to = " + turnOn)
       try {
         const options = {
-          authToken: await this.getAuthToken(),
+          authToken: await this.token,
           vehicleID: await this.getVehicleId(),
         };
         const res = turnOn ? await tjs.climateStartAsync(options) : await tjs.climateStopAsync(options);
@@ -407,7 +407,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
       this.log("Setting car to locked = " + locked);
       try {
         const options = {
-          authToken: await this.getAuthToken(),
+          authToken: await this.token,
           vehicleID: await this.getVehicleId(),
         };
         const res = locked ? await tjs.doorLockAsync(options) : await tjs.doorUnlockAsync(options);
@@ -443,6 +443,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
             authToken: await this.getAuthToken(),
             vehicleID: await this.getVehicleId(),
           };
+          this.log(options);
           this.log('querying tesla for vehicle data...')
           const res = await tjs.vehicleDataAsync(options);
           if (res.vehicle_id && !res.reason) {
@@ -477,7 +478,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
       this.log("Setting charge door to locked = " + locked);
       try {
         const options = {
-          authToken: await this.getAuthToken(),
+          authToken: await this.token,
           vehicleID: await this.getVehicleId(),
         };
         const res = locked ? await tjs.closeChargePortAsync(options) : await tjs.openChargePortAsync(options);
@@ -503,7 +504,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
         if (this.lastWakeupTS + 5000 < Date.now()) {
           this.lastWakeupTS = Date.now();
           let res = await tjs.wakeUpAsync({
-            authToken: await this.getAuthToken(),
+            authToken: await this.token,
             vehicleID
           });
         }
@@ -512,7 +513,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
           await new Promise(resolve => setTimeout(resolve, 1000));
           this.log('checking if tesla woken up')
           const res2 = await tjs.vehiclesAsync({
-            authToken: await this.getAuthToken(),
+            authToken: await this.token,
           });
           this.log(res2);
           const state = res2[0].state;
@@ -546,7 +547,9 @@ module.exports = function createTesla({ Service, Characteristic }) {
           scope: "openid email offline_access"
         }, config)
         .catch(err => this.log(err));
-        return re.data.access_token;
+
+        this.token = re.data.access_token;
+        return this.token;
       }
 
     async getVehicleId() {
@@ -555,7 +558,8 @@ module.exports = function createTesla({ Service, Characteristic }) {
       }
       this.log("querying tesla vehicle id and state...")
       
-      this.token = await this.getAuthToken();
+      //this.token = await this.token;
+      this.log(this.token);
       
       try {
         const res = await tjs.vehiclesAsync({
