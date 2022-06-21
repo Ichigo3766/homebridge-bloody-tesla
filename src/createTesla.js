@@ -443,7 +443,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
             authToken: await this.getAuthToken(),
             vehicleID: await this.getVehicleId(),
           };
-          this.log(options);
           this.log('querying tesla for vehicle data...')
           const res = await tjs.vehicleDataAsync(options);
           if (res.vehicle_id && !res.reason) {
@@ -558,17 +557,12 @@ module.exports = function createTesla({ Service, Characteristic }) {
       }
       this.log("querying tesla vehicle id and state...")
       
-      //this.token = await this.token;
-      this.log(this.token);
-      
       try {
         const res = await tjs.vehiclesAsync({
           authToken: this.token,
         });
         const vehicleId = res[0].id;
-        this.log(vehicleId);
         const state = res[0].state;
-        this.log(state);
         if (state !== 'online') {
           this.log('awaking car...')
           await this.wakeUp(res[0].id);
