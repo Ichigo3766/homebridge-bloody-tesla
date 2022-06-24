@@ -1,6 +1,6 @@
 {
   "name": "homebridge-bloody-tesla",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "description": "Tesla support for Homebridge: https://github.com/bloodsucker99/homebridge-bloody-tesla",
   "main": "src/index.js",
   "license": "MIT",
