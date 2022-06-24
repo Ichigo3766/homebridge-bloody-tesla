@@ -1,5 +1,7 @@
 # Homebridge-bloody-tesla (WIP)
 
+NOTE: This is just a work in progress and could slow down functionality of the pluggin.  
+
 A [homebridge](https://github.com/nfarina/homebridge) plugin, by which you can control your tesla with Homekit and Siri.
 
 Install the plugin:
@@ -13,8 +15,8 @@ Add the following to config.json:
         {
           "accessory": "Tesla",
           "name": "Model S",
-          "vin": "XXXXXXX",
-          "token": "XXXXXXX",
+          "vin": "vin#",
+          "token": "refresh_token",
         }
       ]
     }

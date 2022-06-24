@@ -1,3 +1,5 @@
+const { on } = require("events");
+const { stat } = require("fs");
 const tjs = require("teslajs");
 const util = require ("util");
 
@@ -26,6 +28,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
       this.lastVehicleIdTS = 0
       this.vehicleData = null
       this.getPromise = null
+      this.isAsleep = null
 
       this.temperatureService = new Service.Thermostat(this.name)
       this.temperatureService.getCharacteristic(Characteristic.CurrentTemperature)
@@ -103,11 +106,16 @@ module.exports = function createTesla({ Service, Characteristic }) {
       this.LightsService.getCharacteristic(Characteristic.On)
         .on('get', this.getLightsState.bind(this))
         .on('set', this.setLightsState.bind(this))
+
+      this.Connection = new Service.Switch(this.name + ' Connection', 'connection')
+      this.Connection.getCharacteristic(Characteristic.On)
+        .on('get', this.getConnection.bind(this))
+        .on('set', this.setConnection.bind(this))
     }
 
 
     getConditioningState(callback) {
-      return callback(null, !!this.conditioningTimer);
+      return callback(null, false);
     }
 
     async setConditioningState(on, callback) {
@@ -202,11 +210,18 @@ module.exports = function createTesla({ Service, Characteristic }) {
     async getTrunkState(which, callback) {
       this.log("Getting current trunk state...")
       try {
-        await this.getCarDataPromise()
-        const vehicleState = this.vehicleData.vehicle_state;
-        const res = which === 'frunk' ? !vehicleState.ft : !vehicleState.rt;
-        this.log(`${which} state is ${res}`);
-        return callback(null, res)
+        const st = await this.getState();
+        if (st === "online") {
+          await this.getCarDataPromise()
+          const vehicleState = this.vehicleData.vehicle_state;
+          const res = which === 'frunk' ? !vehicleState.ft : !vehicleState.rt;
+          this.log(`${which} state is ${res}`);
+          return callback(null, res)
+        }
+        else if (st === "asleep"){
+          return callback(null, false)
+        }
+        
       } catch (err) {
         callback(err)
       }
@@ -394,9 +409,14 @@ module.exports = function createTesla({ Service, Characteristic }) {
     async getLockState(callback) {
       this.log("Getting current lock state...")
       try {
-        await this.getCarDataPromise()
-
-        return callback(null, this.vehicleData.vehicle_state.locked)
+        const state = await this.getState();
+        if (state === "asleep") {
+          return callback(null, null);
+        }
+        else{
+          await this.getCarDataPromise()
+          return callback(null, this.vehicleData.vehicle_state.locked)
+        } 
       } catch (err) {
         callback(err)
       }
@@ -405,105 +425,148 @@ module.exports = function createTesla({ Service, Characteristic }) {
     async setLockState(state, callback) {
       var locked = (state == LockTargetState.SECURED);
       this.log("Setting car to locked = " + locked);
-      try {
-        const options = {
-          authToken: await this.token,
-          vehicleID: await this.getVehicleId(),
-        };
-        const res = locked ? await tjs.doorLockAsync(options) : await tjs.doorUnlockAsync(options);
-        if (res.result && !res.reason) {
-          const currentState = (state == LockTargetState.SECURED) ?
-          LockCurrentState.SECURED : LockCurrentState.UNSECURED
-          setTimeout(function() {
-            this.lockService.setCharacteristic(LockCurrentState, currentState)
-          }.bind(this), 1)
-          callback(null) // success
-        } else {
-          this.log("Error setting lock state: " + res.reason)
-          callback(new Error("Error setting lock state. " + res.reason))
+      const st = await this.getState()
+      if (st !== "asleep") {
+        try {
+          const options = {
+            authToken: await this.token,
+            vehicleID: await this.getVehicleId(),
+          };
+          const res = locked ? await tjs.doorLockAsync(options) : await tjs.doorUnlockAsync(options);
+          if (res.result && !res.reason) {
+            const currentState = (state == LockTargetState.SECURED) ?
+            LockCurrentState.SECURED : LockCurrentState.UNSECURED
+            setTimeout(function() {
+              this.lockService.setCharacteristic(LockCurrentState, currentState)
+            }.bind(this), 1)
+            callback(null) // success
+          } else {
+            this.log("Error setting lock state: " + res.reason)
+            callback(new Error("Error setting lock state. " + res.reason))
+          }
+        } catch (err) {
+          this.log("Error setting lock state: " + util.inspect(arguments))
+          callback(new Error("Error setting lock state."))
         }
-      } catch (err) {
-        this.log("Error setting lock state: " + util.inspect(arguments))
-        callback(new Error("Error setting lock state."))
+      }
+      else {
+        this.log("Tesla Sleeping")
       }
     }
 
-    getCarDataPromise() {
-      if (!this.isRunning) {
-        this.getPromise = this.getCarData();
+    async getCarDataPromise() {
+      if (!this.isRunning) { 
+        this.getPromise = await this.getCarData();
       }
       return this.getPromise;
     }
 
-    getCarData() {
+    async getCarData() {
       return new Promise(async (resolve, reject) => {
-        try {
-          this.isRunning = true;
-          const options = {
-            authToken: await this.getAuthToken(),
-            vehicleID: await this.getVehicleId(),
-          };
-          this.log('querying tesla for vehicle data...')
-          const res = await tjs.vehicleDataAsync(options);
-          if (res.vehicle_id && !res.reason) {
-            this.vehicleData = res;
+          try {
+            this.isRunning = true;
+            const options = {
+              authToken: await this.getAuthToken(),
+              vehicleID: await this.getVehicleId(),
+            };
+            this.log('querying tesla for vehicle data...')
+            const res = await tjs.vehicleDataAsync(options);
+            if (res.vehicle_id && !res.reason) {
+              this.vehicleData = res;
+              this.isRunning = false;
+              resolve(res);
+            } else {
+              this.log('error', res)
+              this.isRunning = false;
+              reject(res);
+            }
+          } 
+          catch (err) {
+            this.log("Tesla is asleep");
             this.isRunning = false;
-            resolve(res);
-          } else {
-            this.log('error', res)
-            this.isRunning = false;
-            reject(res);
+            reject(err);
           }
-        } catch (err) {
-          this.log('error', err)
-          this.isRunning = false;
-          reject(err);
-        }
       });
     }
+
+    async getConnection(callback) {
+      const st = await this.getState();
+      if (st === "online") {
+        return callback(null, true);
+      }
+      else{
+        return callback(null, false);
+      } 
+    }
+
+    async setConnection() {
+      try {
+        const vehicleID = this.lastVehicleId;
+        await this.wakeUp(vehicleID);
+        }
+      catch (err) {  
+        this.log("Error")    
+      }
+    }
+
+    
 
     async getChargeDoorState(callback) {
       this.log("Getting current charge door state...")
       try {
-        await this.getCarDataPromise()
-        return callback(null, !this.vehicleData.charge_state.charge_port_door_open)
+        const state = await this.getState();
+        if (state === "asleep") {
+          return callback(null, false);
+        }
+        else {
+          await this.getCarDataPromise();
+          return callback(null, !this.vehicleData.charge_state.charge_port_door_open);
+        } 
       } catch (err) {
         callback(err)
-      }
+      }    
     }
 
     async setChargeDoorState(state, callback) {
       var locked = (state == LockTargetState.SECURED);
       this.log("Setting charge door to locked = " + locked);
-      try {
-        const options = {
-          authToken: await this.token,
-          vehicleID: await this.getVehicleId(),
-        };
-        const res = locked ? await tjs.closeChargePortAsync(options) : await tjs.openChargePortAsync(options);
-        if (res.result && !res.reason) {
-          const currentState = (state == LockTargetState.SECURED) ?
-          LockCurrentState.SECURED : LockCurrentState.UNSECURED
-          setTimeout(function() {
-            this.chargeDoorService.setCharacteristic(LockCurrentState, currentState)
-          }.bind(this), 1)
-          callback(null) // success
-        } else {
-          this.log("Error setting charge door state: " + res.reason)
-          callback(new Error("Error setting charge door state. " + res.reason))
+      const st = await this.getState();
+      if (st === "online"){
+        try {
+          const options = {
+            authToken: await this.token,
+            vehicleID: await this.getVehicleId(),
+          };
+          const res = locked ? await tjs.closeChargePortAsync(options) : await tjs.openChargePortAsync(options);
+          if (res.result && !res.reason) {
+            const currentState = (state == LockTargetState.SECURED) ?
+            LockCurrentState.SECURED : LockCurrentState.UNSECURED
+            setTimeout(function() {
+              this.chargeDoorService.setCharacteristic(LockCurrentState, currentState)
+            }.bind(this), 1)
+            callback(null) // success
+          } else {
+            this.log("Error setting charge door state: " + res.reason)
+            callback(new Error("Error setting charge door state. " + res.reason))
+          }
+        } 
+        catch (err) {
+          this.log("Error setting charge door state: " + util.inspect(arguments))
+          callback(new Error("Error setting charge door state."))
         }
-      } catch (err) {
-        this.log("Error setting charge door state: " + util.inspect(arguments))
-        callback(new Error("Error setting charge door state."))
       }
+        else {
+          this.log("Tesla is asleepppppppppppp");
+          //this.chargeDoorService.setCharacteristic(LockCurrentState, SECURED)
+        } 
     }
 
     async wakeUp(vehicleID) {
       try {
         if (this.lastWakeupTS + 5000 < Date.now()) {
           this.lastWakeupTS = Date.now();
-          let res = await tjs.wakeUpAsync({
-            authToken: await this.token,
+          await tjs.wakeUpAsync({
+            authToken: this.token,
             vehicleID
           });
         }
@@ -512,12 +575,12 @@ module.exports = function createTesla({ Service, Characteristic }) {
           await new Promise(resolve => setTimeout(resolve, 1000));
           this.log('checking if tesla woken up')
           const res2 = await tjs.vehiclesAsync({
-            authToken: await this.token,
+            authToken: this.token,
           });
-          this.log(res2);
           const state = res2[0].state;
           if (state !== 'asleep'){
             this.log("awake");
+            callback(null) // success
           }
           return Promise.resolve();
         }
@@ -527,6 +590,16 @@ module.exports = function createTesla({ Service, Characteristic }) {
         this.log("Error waking Tesla: " + err)
         return Promise.reject(err);
       };
+    }
+    async getState() {
+      try {
+        const res = await tjs.vehiclesAsync({
+          authToken: this.token,
+        });
+        this.isAsleep = res[0].state;
+        return this.isAsleep;
+      }catch {
+      }
     }
 
      async getAuthToken(){
@@ -562,11 +635,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
           authToken: this.token,
         });
         const vehicleId = res[0].id;
-        const state = res[0].state;
-        if (state !== 'online') {
-          this.log('awaking car...')
-          await this.wakeUp(res[0].id);
-        }
         this.lastVehicleIdTS = Date.now();
         this.lastVehicleId = vehicleId;
         return this.lastVehicleId;
@@ -588,6 +656,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
         this.HornService,
         this.LightsService,
         this.ConditioningService,
+        this.Connection,
       ]
     }
   }
