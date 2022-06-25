@@ -23,6 +23,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
       this.charging = false
       this.chargingState = Characteristic.ChargingState.NOT_CHARGEABLE
       this.batteryLevel = 0
+      this.batteryRange = 0
       this.lastWakeupTS = 0
       this.lastVehicleId = 0
       this.lastVehicleIdTS = 0
@@ -30,7 +31,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
       this.getPromise = null
       this.isAsleep = null
 
-      this.temperatureService = new Service.Thermostat(this.name)
+      this.temperatureService = new Service.Thermostat(this.name + 'Thermostat')
       this.temperatureService.getCharacteristic(Characteristic.CurrentTemperature)
         .on('get', this.getClimateState.bind(this, 'temperature'))
       this.temperatureService.getCharacteristic(Characteristic.TargetTemperature)
@@ -54,7 +55,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
         .on('get', this.getConditioningState.bind(this))
         .on('set', this.setConditioningState.bind(this))
         
-      this.lockService = new Service.LockMechanism(this.name, 'doorlocks', 'Doorlocks')
+      this.lockService = new Service.LockMechanism(this.name + ' Doorlocks', 'doorlocks')
       this.lockService.getCharacteristic(LockCurrentState)
         .on('get', this.getLockState.bind(this))
 
@@ -91,6 +92,12 @@ module.exports = function createTesla({ Service, Characteristic }) {
         .on('get', this.getBatteryLevel.bind(this))
       this.batteryLevelService.getCharacteristic(Characteristic.ChargingState)
         .on('get', this.getChargingState.bind(this, 'state'))
+
+      // this.batteryRangeService = new Service.BatteryService(this.name)
+      // this.batteryRangeService.getCharacteristic(Characteristic.BatteryRange)
+      //   .on('get', this.getBatteryRange.bind(this))
+      // this.batteryRangeService.getCharacteristic(Characteristic.RangeState)
+      //   .on('get', this.getBatteryRange.bind(this, 'state'))  
 
       this.chargingService = new Service.Switch(this.name + ' Charging', 'charging')
       this.chargingService.getCharacteristic(Characteristic.On)
@@ -188,7 +195,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
       }
     }
 
-    getLightsState(callback) {
+     getLightsState(callback) {
       return callback(null, false);
     }
 
@@ -283,6 +290,23 @@ module.exports = function createTesla({ Service, Characteristic }) {
         }
         this.log(`battery level is ${this.batteryLevel}`);
         return callback(null, this.batteryLevel)  
+      } catch (err) {
+        callback(err)
+      }
+    }
+
+    async getBatteryRange(callback) {
+      try {
+        await this.getCarDataPromise()
+        const RangeState = this.vehicleData.charge_state;
+        if (RangeState && RangeState.hasOwnProperty('battery_range')) {
+          this.batteryRange = RangeState.battery_range
+        } else {
+          this.log('Error getting battery range: ' + util.inspect(arguments))
+          return callback(new Error('Error getting battery range.'))
+        }
+        this.log(`battery level is ${this.batteryRange}`);
+        return callback(null, this.batteryRange)  
       } catch (err) {
         callback(err)
       }
@@ -422,7 +446,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
         }
         else{
           await this.getCarDataPromise()
-          return callback(null, !this.vehicleData.vehicle_state.locked)
+          return callback(null, !!this.vehicleData.vehicle_state.locked)
         } 
       } catch (err) {
         callback(err)
@@ -508,37 +532,56 @@ module.exports = function createTesla({ Service, Characteristic }) {
 
     async setConnection() {
       try {
-        const vehicleID = this.lastVehicleId;
-        await this.wakeUp(vehicleID);
+        const st = await this.getState();
+        if (st === "online") {
+          return callback(null, true);
         }
+        else {
+          const vehicleID = this.lastVehicleId;
+          await this.wakeUp(vehicleID);
+        }
+      }
       catch (err) {  
         this.log("Error")    
       }
     }
-
-    
-
-    async getChargeDoorState(callback) {
-      // this.log("Getting current charge door state...")
+    async getLockState(callback) {
+      // this.log("Getting current lock state...")
       try {
-        const st = await this.getState();
-        if (st === "asleep") {
+        const state = await this.getState();
+        if (state === "asleep") {
           return callback(null, true);
         }
-        else {
-          await this.getCarDataPromise();
-          return callback(null, !this.vehicleData.charge_state.charge_port_door_open);
+        else{
+          await this.getCarDataPromise()
+          return callback(null, !!this.vehicleData.vehicle_state.locked)
         } 
       } catch (err) {
         callback(err)
-      }    
+      }
+    }
+
+    async getChargeDoorState(callback) {
+      //this.log("Getting current charge door state...")
+
+      const st = await this.getState();
+        if (st === "asleep") {
+          return callback(null, true);      
+        }
+
+      try {
+        await this.getCarDataPromise()
+        return callback(null, !this.vehicleData.charge_state.charge_port_door_open)
+      } catch (err) {
+        callback(err)
+      }
     }
 
     async setChargeDoorState(state, callback) {
       var locked = (state == LockTargetState.SECURED);
       this.log("Setting charge door to locked = " + locked);
       const st = await this.getState();
-      if (st === "online"){
+      if (st !== "asleep"){
         try {
           const options = {
             authToken: this.token,
@@ -563,8 +606,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
         }
       }
         else {
-          this.log("Tesla is asleepppppppppppp");
-          //this.chargeDoorService.setCharacteristic(LockCurrentState, SECURED)
+          this.log("Tesla is asleep");
         } 
     }
 
@@ -578,7 +620,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
           });
         }
         
-        for (let i=0; i<13; i++) {
+        for (let i=0; i<20; i++) {
           await new Promise(resolve => setTimeout(resolve, 1000));
           this.log('checking if tesla woken up')
           const res2 = await tjs.vehiclesAsync({
@@ -595,9 +637,10 @@ module.exports = function createTesla({ Service, Characteristic }) {
         return Promise.reject(err);
       } catch (err) {
         this.log("Error waking Tesla: " + err)
-        return Promise.reject(err);
-      };
+          return Promise.reject(err);
+        };
     }
+
     async getState() {
       try {
         const res = await tjs.vehiclesAsync({
@@ -658,6 +701,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
         this.trunkService,
         this.frunkService,
         this.batteryLevelService,
+        //this.batteryRangeService,
         this.chargingService,
         this.chargeDoorService,
         this.HornService,
