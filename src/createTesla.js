@@ -298,19 +298,24 @@ module.exports = function createTesla({ Service, Characteristic }) {
         };
         const res = await tjs.honkHornAsync(options);
         if (res.result && !res.reason) {
-          callback(null) // success
-          setTimeout(function() {
-            this.HornService.getCharacteristic(Characteristic.On).updateValue(false);
-          }.bind(this), 1000);
+          // Success
+          this.log("Horn honked");
+          this.HornService.getCharacteristic(Characteristic.On).updateValue(false);
+          callback(null);
         } else {
-          this.log("Error setting horn state: " + res.reason)
-          callback(new Error("Error setting horn state. " + res.reason))
+          // Error
+          const errorMessage = `Error honking horn: ${res.reason || "unknown error"}`;
+          this.log(errorMessage);
+          callback(new Error(errorMessage));
         }
       } catch (err) {
-        this.log("Error setting horn state: " + util.inspect(arguments))
-        callback(new Error("Error setting horn state."))
+        // Exception
+        const errorMessage = `Error honking horn: ${err.message}`;
+        this.log(errorMessage);
+        callback(new Error(errorMessage));
       }
     }
+    
 
      getLightsState(callback) {
       return callback(null, false);
@@ -334,7 +339,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
         }
       } catch (err) {
         this.log("Error setting lights state: " + util.inspect(arguments))
-        callback(new Error("Error setting lights state."))
       }
     }
 
@@ -382,9 +386,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
         if (res.result && !res.reason) {
           const currentState = (state == LockTargetState.SECURED) ?
           LockCurrentState.SECURED : LockCurrentState.UNSECURED
-          setTimeout(function() {
-            this.trunkService.setCharacteristic(LockCurrentState, currentState)
-          }.bind(this), 1)
+          this.trunkService.setCharacteristic(LockCurrentState, currentState);
           callback(null) // success
         } else {
           this.log("Error setting trunk state: " + res.reason)
@@ -395,6 +397,8 @@ module.exports = function createTesla({ Service, Characteristic }) {
         callback(new Error("Error setting trunk state."))
       }
     }
+
+    
 
     async getBatteryLevel(callback) {
       // this.log("Getting current battery level...")
