@@ -2,7 +2,7 @@
     "accessories": [
         {
             "accessory": "Tesla",
-            "name": "My Model S",
+            "name": "Tesla",
             "vin": "XXXXXXX",
             "token": "Refresh Token"
         }

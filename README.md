@@ -1,4 +1,4 @@
-# Homebridge-bloody-tesla (WIP)
+# Homebridge-Bloody-Tesla
 
 NOTE: This is just a work in progress and could slow down functionality of the pluggin.  
 
@@ -14,7 +14,7 @@ Add the following to config.json:
       "accessories": [
         {
           "accessory": "Tesla",
-          "name": "Model S",
+          "name": "Model Y",
           "vin": "vin#",
           "token": "refresh_token",
         }
@@ -22,5 +22,3 @@ Add the following to config.json:
     }
 
 Main reason for this pluggin is to expose climate as thermostat in homekit which allows you to control heating and cooling and set temperature.
-
-
