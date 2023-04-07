@@ -342,6 +342,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
 
     async getTrunkState(which, callback) {
       // this.log("Getting current trunk state...")
+      try {
         const st = await this.getState();
         if (st === "online") {
           await this.getCarDataPromise()
@@ -352,6 +353,10 @@ module.exports = function createTesla({ Service, Characteristic }) {
         }
         else {
           return callback(null, true)
+        }
+        
+      } catch (err) {
+        callback(err)
       }
     }
 
@@ -368,16 +373,18 @@ module.exports = function createTesla({ Service, Characteristic }) {
           vehicleID: await this.getVehicleId(),
         };
         const driveStateRes = await tjs.driveStateAsync(options);
-        const shiftState = driveStateRes.shift_state || "Parked";
-        if (shiftState !== "Parked") {
-          this.log("cannot operate trunks while car is not parked");
-          callback(new Error("cannot operate trunks while car is not parked"));
-        }
-        const res = await tjs.openTrunkAsync(options,  which === 'trunk' ? tjs.TRUNK : tjs.FRUNK);
+        //console.log('driveStateRes:', driveStateRes);
+        //const shiftState = driveStateRes.shift_state || "Parked";
+        // console.log('shift_state:', shift_state);
+        // if (shiftState !== "Parked") {
+        //   this.log("cannot operate trunks while car is not parked");
+        //   callback(new Error("cannot operate trunks while car is not parked"));
+        // }
+        const res = await tjs.openTrunkAsync(options,  which === 'trunk' ? tjs.TRUNK : tjs.FRUNK, callback);
         if (res.result && !res.reason) {
           const currentState = (state == LockTargetState.SECURED) ?
           LockCurrentState.SECURED : LockCurrentState.UNSECURED
-          this.trunkService.setCharacteristic(LockCurrentState, currentState);
+          this.trunkService.setCharacteristic(LockCurrentState, currentState)
           callback(null) // success
         } else {
           this.log("Error setting trunk state: " + res.reason)
@@ -385,12 +392,9 @@ module.exports = function createTesla({ Service, Characteristic }) {
         }
       } catch (err) {
         this.log("Error setting trunk state: " + util.inspect(arguments))
-        callback(new Error("Error setting trunk state."))
       }
     }
-
     
-
     async getBatteryLevel(callback) {
       // this.log("Getting current battery level...")
       try {
@@ -564,7 +568,47 @@ module.exports = function createTesla({ Service, Characteristic }) {
         }
       } catch (err) {
         this.log(`Error setting lock state: ${err}`);
-        callback(new Error("Error setting lock state."));
+      }
+    }
+
+    async getChargeDoorState(callback) {
+      const st = await this.getState();
+      if (st === "online") {
+        try {
+          await this.getCarDataPromise();
+          return callback(null, !this.vehicleData.charge_state.charge_port_door_open);
+        } catch (err) {
+          return callback(err);
+        }
+      } else {
+        return callback(null, true);
+      }
+    }
+
+    async setChargeDoorState(state, callback) {
+      const isLocked = state === LockTargetState.SECURED;
+      this.log(`Setting charge door to locked = ${isLocked}`);
+      
+      try {
+        const options = {
+          authToken: this.token,
+          vehicleID: await this.getVehicleId(),
+        };
+        
+        const res = isLocked ? await tjs.closeChargePortAsync(options) : await tjs.openChargePortAsync(options);
+        if (res.result && !res.reason) {
+          const currentState = isLocked ? LockCurrentState.SECURED : LockCurrentState.UNSECURED;
+          setTimeout(() => {
+            this.chargeDoorService.setCharacteristic(LockCurrentState, currentState);
+          }, 1);
+          callback(null); // success
+        } else {
+          this.log(`Error setting charge door state: ${res.reason}`);
+          callback(new Error(`Error setting charge door state. ${res.reason}`));
+        }
+      } catch (err) {
+        this.log(`Error setting charge door state: ${util.inspect(arguments)}`);
+        callback(new Error("Error setting charge door state."));
       }
     }
       
@@ -628,48 +672,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
       }
       catch (err) {  
         this.log("Waking Up Car")    
-      }
-    }
-    
-
-    async getChargeDoorState(callback) {
-      const st = await this.getState();
-      if (st === "online") {
-        try {
-          await this.getCarDataPromise();
-          return callback(null, !this.vehicleData.charge_state.charge_port_door_open);
-        } catch (err) {
-          return callback(err);
-        }
-      } else {
-        return callback(null, true);
-      }
-    }
-
-    async setChargeDoorState(state, callback) {
-      const isLocked = state === LockTargetState.SECURED;
-      this.log(`Setting charge door to locked = ${isLocked}`);
-      
-      try {
-        const options = {
-          authToken: this.token,
-          vehicleID: await this.getVehicleId(),
-        };
-        
-        const res = isLocked ? await tjs.closeChargePortAsync(options) : await tjs.openChargePortAsync(options);
-        if (res.result && !res.reason) {
-          const currentState = isLocked ? LockCurrentState.SECURED : LockCurrentState.UNSECURED;
-          setTimeout(() => {
-            this.chargeDoorService.setCharacteristic(LockCurrentState, currentState);
-          }, 1);
-          callback(null); // success
-        } else {
-          this.log(`Error setting charge door state: ${res.reason}`);
-          callback(new Error(`Error setting charge door state. ${res.reason}`));
-        }
-      } catch (err) {
-        this.log(`Error setting charge door state: ${util.inspect(arguments)}`);
-        callback(new Error("Error setting charge door state."));
       }
     }
     
