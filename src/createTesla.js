@@ -155,7 +155,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
           }
         } catch (err) {
           this.log("Error setting sentry mode: " + util.inspect(arguments));
-          callback(new Error("Error setting sentry mode."));
         }
       } else {
         callback(null, false);
@@ -192,7 +191,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
           }
         } catch (err) {
           this.log("Error setting defrost state: " + util.inspect(arguments));
-          callback(new Error("Error setting defrost state."));
         }
       } else {
         return callback(null, false);
@@ -230,7 +228,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
           }
         } catch (err) {
           this.log("Error setting vent state: " + util.inspect(arguments));
-          callback(new Error("Error setting vent state."));
         }
       } else {
         return callback(null, false);
@@ -282,7 +279,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
         }
       } catch (err) {
         this.log("Error setting charging state: " + util.inspect(arguments))
-        callback(new Error("Error setting charging state."))
       }
     }
 
@@ -346,7 +342,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
 
     async getTrunkState(which, callback) {
       // this.log("Getting current trunk state...")
-      try {
         const st = await this.getState();
         if (st === "online") {
           await this.getCarDataPromise()
@@ -357,10 +352,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
         }
         else {
           return callback(null, true)
-        }
-        
-      } catch (err) {
-        callback(err)
       }
     }
 
@@ -443,7 +434,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
           case 'charging': return callback(null, this.charging)
         }
       } catch (err) {
-        callback(err)
       }
     }
 
@@ -470,7 +460,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
         }
       } catch (err) {
         this.log("Error setting charging state: " + util.inspect(arguments))
-        callback(new Error("Error setting charging state."))
       }
     }
 
@@ -494,7 +483,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
         }
       } catch (err) {
         this.log("Error setting temp: " + util.inspect(arguments))
-        callback(new Error("Error setting lock state."))
       }
     }
 
@@ -518,7 +506,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
         this.log(`climate: ${what} state is ${ret}`);
         return callback(null, ret);
       } catch (err) {
-        callback(err)
       }
     }
 
@@ -539,7 +526,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
         }
       } catch (err) {
         this.log("Error setting climate state: " + util.inspect(arguments))
-        callback(new Error("Error setting lock state."))
       }
     }
     
@@ -552,11 +538,16 @@ module.exports = function createTesla({ Service, Characteristic }) {
           return callback(null, true);
         }
       }
-
+    
     async setLockState(state, callback) {
       const locked = state === LockTargetState.SECURED;
       this.log(`Setting car to locked = ${locked}`);
       try {
+        const state = await this.getState();
+        if (state !== "online") {
+          this.log("Tesla is not online");
+          return callback(null, false);
+        }
         await this.getCarDataPromise();
         const options = {
           authToken: this.token,
@@ -576,8 +567,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
         callback(new Error("Error setting lock state."));
       }
     }
-    
-    
+      
 
     async getCarDataPromise() {
       this.getPromise = this.getPromise || this.getCarData();
@@ -684,7 +674,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
     }
     
 
-    async wakeUp(vehicleID) {
+    async wakeUp(vehicleID, callback) {
       try {
         if (this.lastWakeupTS + 5000 < Date.now()) {
           this.lastWakeupTS = Date.now();
@@ -703,17 +693,17 @@ module.exports = function createTesla({ Service, Characteristic }) {
           const state = res2[0].state;
           if (state !== 'asleep'){
             this.log("awake");
-            callback(null) // success
+            return callback(null) // success
           }
-          return Promise.resolve();
         }
-        this.log("Error waking Tesla: " + err)
-        return Promise.reject(err);
+        this.log("Error waking Tesla: took too long to wake up")
+        return callback(new Error("Error waking Tesla: took too long to wake up"));
       } catch (err) {
         this.log("Error waking Tesla: " + err)
-          return Promise.reject(err);
-        };
+        return callback(err);
+      }
     }
+    
 
     async getState() {
       try {
