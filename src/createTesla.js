@@ -638,7 +638,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
             this.log("Tesla is asleep");
             this.isRunning = false;
             reject(err);
-          }
+         }
       });
     }
 
