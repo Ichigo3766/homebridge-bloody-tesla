@@ -492,6 +492,8 @@ module.exports = function createTesla({ Service, Characteristic }) {
 
     async getClimateState(what, callback) {
       // this.log("Getting current climate state...")
+      const st = await this.getState();
+      if (st === "online") {
       try {
         await this.getCarDataPromise()
         const climateState = this.vehicleData.climate_state;
@@ -509,8 +511,10 @@ module.exports = function createTesla({ Service, Characteristic }) {
         }
         this.log(`climate: ${what} state is ${ret}`);
         return callback(null, ret);
-      } catch (err) {
+      } 
+      catch (err) {
       }
+    }
     }
 
     async setClimateOn(state, callback) {
