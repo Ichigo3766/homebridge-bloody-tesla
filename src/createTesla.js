@@ -176,7 +176,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
     async setDefrostState(state, callback) {
       const st = await this.getState();
       const onoff = state ? "true" : "false";
-      if (st === "online") {
         try {
           const options = {
             authToken: this.token,
@@ -192,9 +191,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
         } catch (err) {
           this.log("Error setting defrost state: " + util.inspect(arguments));
         }
-      } else {
-        return callback(null, false);
-      }
     }
     
     
@@ -213,7 +209,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
       const lon = 0;
       const command = state ? "vent" : "close";
       const st = await this.getState();
-      if (st === "online") {
         try {
           const options = {
             authToken: this.token,
@@ -229,9 +224,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
         } catch (err) {
           this.log("Error setting vent state: " + util.inspect(arguments));
         }
-      } else {
-        return callback(null, false);
-      }
     }
     
 
@@ -654,6 +646,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
 
     async getConnection(callback) {
       const st = await this.getState();
+      this.log(st);
       if (st === "online") {
         return callback(null, true);
       }
@@ -662,7 +655,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
       } 
     }
 
-    async setConnection() {
+    async setConnection(callback) {
       try {
         const st = await this.getState();
         if (st === "online") {
