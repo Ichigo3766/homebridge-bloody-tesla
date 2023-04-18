@@ -31,6 +31,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
       this.isAsleep = null
       this.tokenTS = 0
       this.lastStateFetchTime = 0
+      this.isThrottled = false
 
       this.temperatureService = new Service.Thermostat(this.name + ' Thermostat', 'thermostat')
       this.temperatureService.getCharacteristic(Characteristic.CurrentTemperature)
@@ -141,7 +142,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
             "user-agent":"Mozilla/5.0 (Linux; Android 8.1.0; Pixel XL Build/OPM4.171019.021.D1; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/68.0.3440.91 Mobile Safari/537.36"
           },
         }
-        
+
         try {
           let re = await request.post('https://auth.tesla.com/oauth2/v3/token', {
             grant_type: "refresh_token",
@@ -190,7 +191,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
         this.lastStateFetchTime = Date.now();
         return this.isAsleep;
       } catch (err) {
-        this.log("Error getting Tesla state: " + err);
       }
     }
 
@@ -733,8 +733,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
           }
       });
     }
-
-    
 
     async getConnection(callback) {
       const st = await this.getState();
