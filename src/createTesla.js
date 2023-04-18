@@ -29,6 +29,8 @@ module.exports = function createTesla({ Service, Characteristic }) {
       this.vehicleData = null
       this.getPromise = null
       this.isAsleep = null
+      this.tokenTS = 0
+      this.lastStateFetchTime = 0
 
       this.temperatureService = new Service.Thermostat(this.name + ' Thermostat', 'thermostat')
       this.temperatureService.getCharacteristic(Characteristic.CurrentTemperature)
@@ -365,13 +367,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
           vehicleID: await this.getVehicleId(),
         };
         const driveStateRes = await tjs.driveStateAsync(options);
-        //console.log('driveStateRes:', driveStateRes);
-        //const shiftState = driveStateRes.shift_state || "Parked";
-        // console.log('shift_state:', shift_state);
-        // if (shiftState !== "Parked") {
-        //   this.log("cannot operate trunks while car is not parked");
-        //   callback(new Error("cannot operate trunks while car is not parked"));
-        // }
+
         const res = await tjs.openTrunkAsync(options,  which === 'trunk' ? tjs.TRUNK : tjs.FRUNK, callback);
         if (res.result && !res.reason) {
           const currentState = (state == LockTargetState.SECURED) ?
@@ -638,7 +634,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
             this.log("Tesla is asleep");
             this.isRunning = false;
             reject(err);
-         }
+          }
       });
     }
 
@@ -646,7 +642,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
 
     async getConnection(callback) {
       const st = await this.getState();
-      this.log(st);
       if (st === "online") {
         return callback(null, true);
       }
@@ -705,17 +700,23 @@ module.exports = function createTesla({ Service, Characteristic }) {
     
 
     async getState() {
+      if (this.isAsleep && this.lastStateFetchTime && Date.now() - this.lastStateFetchTime < 10000) {
+        return this.isAsleep;
+      }
       try {
         const res = await tjs.vehiclesAsync({
           authToken: this.token,
         });
         this.isAsleep = res[0].state;
+        this.lastStateFetchTime = Date.now();
         return this.isAsleep;
-      }catch {
-      }
+      }catch {}
     }
 
      async getAuthToken(){
+      if (this.token && this.tokenTS + 3600000 > Date.now()) {
+        return this.token;
+      }
         const request = require("axios");
   
         const config = {
@@ -732,8 +733,9 @@ module.exports = function createTesla({ Service, Characteristic }) {
           scope: "openid email offline_access"
         }, config)
         .catch(err => this.log(err));
-
+        
         this.token = re.data.access_token;
+        this.tokenTS = Date.now();
         return this.token;
       }
 
