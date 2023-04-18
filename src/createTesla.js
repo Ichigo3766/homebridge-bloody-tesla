@@ -1,13 +1,13 @@
-const { on } = require("events");
-const { stat } = require("fs");
+// const { on } = require("events");
+// const { stat } = require("fs");
 const tjs = require("teslajs");
 const util = require ("util");
 
 module.exports = function createTesla({ Service, Characteristic }) {
-  const CurrentTemperature = Characteristic.CurrentTemperature
+  //const CurrentTemperature = Characteristic.CurrentTemperature
   const LockCurrentState = Characteristic.LockCurrentState
   const LockTargetState = Characteristic.LockTargetState
-  const SwitchOn = Characteristic.On
+  //const SwitchOn = Characteristic.On
 
   return class Tesla {
     constructor(log, config) {
@@ -129,6 +129,71 @@ module.exports = function createTesla({ Service, Characteristic }) {
 
     }
 
+    async getAuthToken(){
+      if (this.token && this.tokenTS + 3600000 > Date.now()) {
+        return this.token;
+      }
+        const request = require("axios");
+  
+        const config = {
+          headers: {
+            "x-tesla-user-agent": "TeslaApp/3.4.4-350/fad4a582e/android/8.1.0",
+            "user-agent":"Mozilla/5.0 (Linux; Android 8.1.0; Pixel XL Build/OPM4.171019.021.D1; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/68.0.3440.91 Mobile Safari/537.36"
+          },
+        }
+        
+        try {
+          let re = await request.post('https://auth.tesla.com/oauth2/v3/token', {
+            grant_type: "refresh_token",
+            client_id: "ownerapi",
+            refresh_token: this.ref,
+            scope: "openid email offline_access"
+          }, config);
+          this.token = re.data.access_token;
+          this.tokenTS = Date.now();
+          return this.token;
+        } catch (err) {
+          this.log(err);
+          throw err; // re-throw the error to be handled by the caller
+        }
+      }
+
+    async getVehicleId() {
+      if (this.lastVehicleId) {
+        return this.lastVehicleId;
+      }
+      this.log("querying tesla vehicle id and state...")
+      
+      try {
+        const res = await tjs.vehiclesAsync({
+          authToken: this.token,
+        });
+        const vehicleId = res[0].id;
+        this.lastVehicleIdTS = Date.now();
+        this.lastVehicleId = vehicleId;
+        return this.lastVehicleId;
+      } catch (err) {
+        this.log("Error logging into Tesla: " + err)
+        return Promise.reject(err);
+      };
+    }
+
+    async getState() {
+      if (this.isAsleep && this.lastStateFetchTime && Date.now() - this.lastStateFetchTime < 10000) {
+        return this.isAsleep;
+      }
+      try {
+        const res = await tjs.vehiclesAsync({
+          authToken: this.token,
+        });
+        this.isAsleep = res[0].state;
+        this.lastStateFetchTime = Date.now();
+        return this.isAsleep;
+      } catch (err) {
+        this.log("Error getting Tesla state: " + err);
+      }
+    }
+
     async getSentryMode(callback) {
       const st = await this.getState();
       if (st === "online") {
@@ -232,10 +297,11 @@ module.exports = function createTesla({ Service, Characteristic }) {
     async getConditioningState(callback) {
       const st = await this.getState();
       if (st === "asleep"){
+        this.log("Car is asleep, can't get conditioning state")
         return callback(null, false)
       }
       else {
-        return callback(null, !!this.conditioningTimer);
+        return callback(null, false);
       }
       
     }
@@ -277,6 +343,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
     }
 
     getHornState(callback) {
+      this.log("Getting horn state");
       return callback(null, false);
     }
 
@@ -308,6 +375,8 @@ module.exports = function createTesla({ Service, Characteristic }) {
     
 
      getLightsState(callback) {
+      this.log("Getting lights state");
+      this.LightsService.getCharacteristic(Characteristic.On).updateValue(false);
       return callback(null, false);
     }
 
@@ -332,14 +401,12 @@ module.exports = function createTesla({ Service, Characteristic }) {
       }
     }
 
-
-
     async getTrunkState(which, callback) {
       // this.log("Getting current trunk state...")
       try {
         const st = await this.getState();
         if (st === "online") {
-          await this.getCarDataPromise()
+          await this.getCarData()
           const vehicleState = this.vehicleData.vehicle_state;
           const res = which === 'frunk' ? !vehicleState.ft : !vehicleState.rt;
           this.log(`${which} state is ${res}`);
@@ -347,39 +414,32 @@ module.exports = function createTesla({ Service, Characteristic }) {
         }
         else {
           return callback(null, true)
-        }
-        
+        } 
       } catch (err) {
-        callback(err)
       }
     }
 
     async setTrunkState(which, state, callback) {
       var toLock = (state == LockTargetState.SECURED);
       this.log(`Setting ${which} to toLock = ${toLock}`);
-      if (toLock) {
-        this.log("cannot close trunks");
-        callback(new Error("I can only open trunks"));
-      }
       try {
         const options = {
           authToken: this.token,
           vehicleID: await this.getVehicleId(),
         };
-        const driveStateRes = await tjs.driveStateAsync(options);
-
-        const res = await tjs.openTrunkAsync(options,  which === 'trunk' ? tjs.TRUNK : tjs.FRUNK, callback);
-        if (res.result && !res.reason) {
+        await tjs.driveStateAsync(options);
+        const res = await tjs.openTrunkAsync(options, which === 'trunk' ? tjs.TRUNK : tjs.FRUNK);
+        if (res.result) {
           const currentState = (state == LockTargetState.SECURED) ?
           LockCurrentState.SECURED : LockCurrentState.UNSECURED
-          this.trunkService.setCharacteristic(LockCurrentState, currentState)
+          this.trunkService.setCharacteristic(Characteristic.LockCurrentState, currentState)
           callback(null) // success
         } else {
-          this.log("Error setting trunk state: " + res.reason)
-          callback(new Error("Error setting trunk state. " + res.reason))
+          this.log("Error setting trunk state: " + res.response.reason)
+          callback(new Error("Error setting trunk state. " + res.response.reason))
         }
       } catch (err) {
-        this.log("Error setting trunk state: " + util.inspect(arguments))
+        this.log("Error setting trunk state: " + err)
       }
     }
     
@@ -459,22 +519,46 @@ module.exports = function createTesla({ Service, Characteristic }) {
       return Math.round(cel * 1.8 + 32);
     }
 
-    async setTargetTemperature(value, callback) {
-      this.log(`Setting temp to ${value} (${this.celsiusToFer(value)}F)`);
+    async getTargetTemperature(callback) {
+      // this.log("Getting current target temperature...")
+      try {
+        st = await this.getState();
+        if (st === "online") {
+          await this.getCarData()
+          const climateState = this.vehicleData.climate_state;
+          if (climateState && climateState.hasOwnProperty('driver_temp_setting')) {
+            this.targetTemperature = this.celsiusToFer(climateState.driver_temp_setting)
+          } else {
+            this.log('Error getting target temperature: ' + util.inspect(arguments))
+            return callback(new Error('Error getting target temperature.'))
+          }
+          this.log(`target temperature is ${this.targetTemperature}`);
+          return callback(null, this.targetTemperature)  
+        }
+        else {
+          return callback(null, !!this.targetTemperature)
+        }
+      } catch (err) {
+      }
+    }
+    
+    async setTargetTemperature(temp, callback) {
+      this.log('Setting target temperature to ' + temp)
       try {
         const options = {
           authToken: this.token,
           vehicleID: await this.getVehicleId(),
         };
-        const res = await tjs.setTempsAsync(options, value, value)
+        const res = await tjs.setTempsAsync(options, temp, temp);
+        this.log(res);
         if (res.result && !res.reason) {
           callback(null) // success
         } else {
-          this.log("Error setting temp: " + res.reason)
-          callback(new Error("Error setting temp. " + res.reason))
+          this.log("Error setting target temperature: " + res.reason)
+          callback(new Error("Error setting target temperature. " + res.reason))
         }
       } catch (err) {
-        this.log("Error setting temp: " + util.inspect(arguments))
+        this.log("Error setting target temperature: " + util.inspect(arguments))
       }
     }
 
@@ -482,28 +566,40 @@ module.exports = function createTesla({ Service, Characteristic }) {
       // this.log("Getting current climate state...")
       const st = await this.getState();
       if (st === "online") {
-      try {
-        await this.getCarDataPromise()
-        const climateState = this.vehicleData.climate_state;
+        try {
+          await this.getCarDataPromise()
+          const climateState = this.vehicleData.climate_state;
+          let ret;
+          switch (what) {
+            case 'temperature':
+              ret = climateState.inside_temp;
+              break;
+            case 'setting':
+              ret = climateState.driver_temp_setting;
+              break;
+            case 'state':
+              ret = climateState.is_auto_conditioning_on ? Characteristic.TargetHeatingCoolingState.AUTO : Characteristic.TargetHeatingCoolingState.OFF;
+              break;
+          }
+          this.log(`climate: ${what} state is ${ret}`);
+          return callback(null, ret);
+        } catch (err) {}
+      } else {
         let ret;
         switch (what) {
           case 'temperature':
-            ret = climateState.inside_temp;
+            ret = 10;
             break;
           case 'setting':
-            ret = climateState.driver_temp_setting;
+            ret = 0;
             break;
           case 'state':
-            ret = climateState.is_auto_conditioning_on ? Characteristic.TargetHeatingCoolingState.AUTO : Characteristic.TargetHeatingCoolingState.OFF;
+            ret = Characteristic.TargetHeatingCoolingState.OFF;
             break;
         }
-        this.log(`climate: ${what} state is ${ret}`);
-        return callback(null, ret);
-      } 
-      catch (err) {
+        return callback(10, ret);
       }
-    }
-    }
+    } 
 
     async setClimateOn(state, callback) {
       const turnOn = state !== Characteristic.TargetHeatingCoolingState.OFF;
@@ -696,67 +792,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
         this.log("Error waking Tesla: " + err)
         return callback(err);
       }
-    }
-    
-
-    async getState() {
-      if (this.isAsleep && this.lastStateFetchTime && Date.now() - this.lastStateFetchTime < 10000) {
-        return this.isAsleep;
-      }
-      try {
-        const res = await tjs.vehiclesAsync({
-          authToken: this.token,
-        });
-        this.isAsleep = res[0].state;
-        this.lastStateFetchTime = Date.now();
-        return this.isAsleep;
-      }catch {}
-    }
-
-     async getAuthToken(){
-      if (this.token && this.tokenTS + 3600000 > Date.now()) {
-        return this.token;
-      }
-        const request = require("axios");
-  
-        const config = {
-          headers: {
-            "x-tesla-user-agent": "TeslaApp/3.4.4-350/fad4a582e/android/8.1.0",
-            "user-agent":"Mozilla/5.0 (Linux; Android 8.1.0; Pixel XL Build/OPM4.171019.021.D1; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/68.0.3440.91 Mobile Safari/537.36"
-          },
-        }
-  
-        let re = await request.post('https://auth.tesla.com/oauth2/v3/token',{
-          grant_type: "refresh_token",
-          client_id: "ownerapi",
-          refresh_token: this.ref,
-          scope: "openid email offline_access"
-        }, config)
-        .catch(err => this.log(err));
-        
-        this.token = re.data.access_token;
-        this.tokenTS = Date.now();
-        return this.token;
-      }
-
-    async getVehicleId() {
-      if (this.lastVehicleId && this.lastVehicleIdTS + 10000 > Date.now()) {
-        return this.lastVehicleId;
-      }
-      this.log("querying tesla vehicle id and state...")
-      
-      try {
-        const res = await tjs.vehiclesAsync({
-          authToken: this.token,
-        });
-        const vehicleId = res[0].id;
-        this.lastVehicleIdTS = Date.now();
-        this.lastVehicleId = vehicleId;
-        return this.lastVehicleId;
-      } catch (err) {
-        this.log("Error logging into Tesla: " + err)
-        return Promise.reject(err);
-      };
     }
 
     getServices() {
