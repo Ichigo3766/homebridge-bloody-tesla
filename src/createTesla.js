@@ -25,7 +25,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
       this.batteryLevel = 0
       this.lastWakeupTS = 0
       this.lastVehicleId = 0
-      this.lastVehicleIdTS = 0
       this.vehicleData = null
       this.getPromise = null
       this.isAsleep = null
@@ -159,25 +158,24 @@ module.exports = function createTesla({ Service, Characteristic }) {
         }
       }
 
-    async getVehicleId() {
-      if (this.lastVehicleId) {
-        return this.lastVehicleId;
-      }
-      this.log("querying tesla vehicle id and state...")
-      
-      try {
-        const res = await tjs.vehiclesAsync({
-          authToken: this.token,
-        });
-        const vehicleId = res[0].id;
-        this.lastVehicleIdTS = Date.now();
-        this.lastVehicleId = vehicleId;
-        return this.lastVehicleId;
-      } catch (err) {
-        this.log("Error logging into Tesla: " + err)
-        return Promise.reject(err);
+      async getVehicleId() {
+        if (this.lastVehicleId) {
+          return this.lastVehicleId;
+        }
+        this.log("querying tesla vehicle id and state...")
+        
+        try {
+          const res = await tjs.vehiclesAsync({
+            authToken: this.token,
+          });
+          const vehicleId = res[0].id;
+          this.lastVehicleId = vehicleId;
+          return this.lastVehicleId;
+        } catch (err) {
+          this.log("Error logging into Tesla: " + err)
+          throw err;
+        }
       };
-    }
 
     async getState() {
       if (this.isAsleep && this.lastStateFetchTime && Date.now() - this.lastStateFetchTime < 10000) {
@@ -444,20 +442,27 @@ module.exports = function createTesla({ Service, Characteristic }) {
     }
     
     async getBatteryLevel(callback) {
-      // this.log("Getting current battery level...")
       try {
-        await this.getCarDataPromise()
-        const chargingState = this.vehicleData.charge_state;
-        if (chargingState && chargingState.hasOwnProperty('battery_level')) {
-          this.batteryLevel = chargingState.battery_level
+        const st = await this.getState();
+        if (st === "online") {
+          await this.getCarDataPromise();
+          const chargingState = this.vehicleData.charge_state;
+          if (chargingState && chargingState.hasOwnProperty('battery_level')) {
+            this.batteryLevel = chargingState.battery_level;
+            this.log(`battery level is ${this.batteryLevel}`);
+            return callback(null, this.batteryLevel);
+          } else {
+            this.log('Error getting battery level: ' + util.inspect(arguments));
+            return callback(new Error('Error getting battery level.'));
+          }
         } else {
-          this.log('Error getting battery level: ' + util.inspect(arguments))
-          return callback(new Error('Error getting battery level.'))
+          // Car is offline, callback false and update brightness value
+          this.log('Car is offline.');
+          callback(0,false);
         }
-        this.log(`battery level is ${this.batteryLevel}`);
-        return callback(null, this.batteryLevel)  
       } catch (err) {
-        callback(err)
+        this.log('Error getting battery level:', err);
+        callback(err);
       }
     }
 
@@ -699,40 +704,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
         callback(new Error("Error setting charge door state."));
       }
     }
-      
-
-    async getCarDataPromise() {
-      this.getPromise = this.getPromise || this.getCarData();
-      return this.getPromise;
-    }
-
-    async getCarData() {
-      return new Promise(async (resolve, reject) => {
-          try {
-            this.isRunning = true;
-            const options = {
-              authToken: await this.getAuthToken(),
-              vehicleID: await this.getVehicleId(),
-            };
-            this.log('querying tesla for vehicle data...')
-            const res = await tjs.vehicleDataAsync(options);
-            if (res.vehicle_id && !res.reason) {
-              this.vehicleData = res;
-              this.isRunning = false;
-              resolve(res);
-            } else {
-              this.log('error', res)
-              this.isRunning = false;
-              reject(res);
-            }
-          } 
-          catch (err) {
-            this.log("Tesla is asleep");
-            this.isRunning = false;
-            reject(err);
-          }
-      });
-    }
 
     async getConnection(callback) {
       const st = await this.getState();
@@ -773,7 +744,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
         }
         
         for (let i=0; i<20; i++) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise(resolve => setTimeout(resolve, 5000));
           this.log('checking if tesla woken up')
           const res2 = await tjs.vehiclesAsync({
             authToken: this.token,
@@ -788,9 +759,44 @@ module.exports = function createTesla({ Service, Characteristic }) {
         return callback(new Error("Error waking Tesla: took too long to wake up"));
       } catch (err) {
         this.log("Error waking Tesla: " + err)
-        return callback(err);
       }
     }
+      
+    
+
+    async getCarDataPromise() {
+      this.getPromise = this.getPromise || this.getCarData();
+      return this.getPromise;
+    }
+
+    async getCarData() {
+      return new Promise(async (resolve, reject) => {
+          try {
+            this.isRunning = true;
+            const options = {
+              authToken: await this.getAuthToken(),
+              vehicleID: await this.getVehicleId(),
+            };
+            this.log('querying tesla for vehicle data...')
+            const res = await tjs.vehicleDataAsync(options);
+            if (res.vehicle_id && !res.reason) {
+              this.vehicleData = res;
+              this.isRunning = false;
+              resolve(res);
+            } else {
+              this.log('error', res)
+              this.isRunning = false;
+              reject(res);
+            }
+          } 
+          catch (err) {
+            this.log("Tesla is asleep");
+            this.isRunning = false;          
+          }
+      });
+    }
+
+    
 
     getServices() {
       return [
