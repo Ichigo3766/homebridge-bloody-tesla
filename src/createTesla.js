@@ -345,7 +345,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
       return callback(null, false);
     }
 
-    async setHornState(state, callback) {
+    async setHornState(callback) {
       try {
         const options = {
           authToken: this.token,
@@ -458,7 +458,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
         } else {
           // Car is offline, callback false and update brightness value
           this.log('Car is offline.');
-          callback(0,false);
+          callback(null, this.batteryLevel);
         }
       } catch (err) {
         this.log('Error getting battery level:', err);
