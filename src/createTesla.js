@@ -458,7 +458,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
         } else {
           // Car is offline, callback false and update brightness value
           this.log('Car is offline.');
-          callback(null, this.batteryLevel);
+          callback(null, !!this.batteryLevel);
         }
       } catch (err) {
         this.log('Error getting battery level:', err);
@@ -723,7 +723,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
         }
         else {
           const vehicleID = this.lastVehicleId;
-          await this.wakeUp(vehicleID);
+          await this.wakeUp(vehicleID,callback);
           return callback(null, true);
         }
       }
@@ -754,6 +754,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
             this.log("awake");
             return callback(null) // success
           }
+          return Promise.resolve();
         }
         this.log("Error waking Tesla: took too long to wake up")
         return callback(new Error("Error waking Tesla: took too long to wake up"));
