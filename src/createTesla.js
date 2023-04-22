@@ -189,12 +189,13 @@ module.exports = function createTesla({ Service, Characteristic }) {
         this.lastStateFetchTime = Date.now();
         return this.isAsleep;
       } catch (err) {
+        this.log("Error getting tesla state: " + err)
       }
     }
 
     async getSentryMode(callback) {
-      const st = await this.getState();
-      if (st === "online") {
+      //if (st === "online")
+      if (this.isAsleep=== "online") {
         await this.getCarData();
         return callback(null, !!this.vehicleData.vehicle_state.sentry_mode);
       } else {
@@ -203,9 +204,9 @@ module.exports = function createTesla({ Service, Characteristic }) {
     }
     
     async setSentryMode(state, callback) {
-      const st = await this.getState();
+      //if (st === "online")
       const onoff = state ? "true" : "false";
-      if (st === "online") {
+      if (this.isAsleep=== "online") {
         try {
           const options = {
             authToken: this.token,
@@ -228,8 +229,8 @@ module.exports = function createTesla({ Service, Characteristic }) {
     
     
     async getDefrostState(callback) {
-      const st = await this.getState();
-      if (st === "online") {
+      //if (st === "online")
+      if (this.isAsleep=== "online") {
         await this.getCarData();
         return callback(null, !!this.vehicleData.climate_state.is_auto_conditioning_on);
       } else {
@@ -239,7 +240,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
     
 
     async setDefrostState(state, callback) {
-      const st = await this.getState();
+      //if (st === "online")
       const onoff = state ? "true" : "false";
         try {
           const options = {
@@ -260,8 +261,8 @@ module.exports = function createTesla({ Service, Characteristic }) {
     
     
     async getVentState(callback) {
-      const st = await this.getState();
-      if (st === "online") {
+      //if (st === "online")
+      if (this.isAsleep=== "online") {
         await this.getCarData();
         return callback(null, !!this.vehicleData.vehicle_state.fd_window);
       } else {
@@ -273,7 +274,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
       const lat = 0;
       const lon = 0;
       const command = state ? "vent" : "close";
-      const st = await this.getState();
+      //if (st === "online")
         try {
           const options = {
             authToken: this.token,
@@ -293,8 +294,8 @@ module.exports = function createTesla({ Service, Characteristic }) {
     
 
     async getConditioningState(callback) {
-      const st = await this.getState();
-      if (st === "asleep"){
+      //if (st === "online")
+      if ( this.isAsleep === "asleep"){
         this.log("Car is asleep, can't get conditioning state")
         return callback(null, false)
       }
@@ -402,8 +403,8 @@ module.exports = function createTesla({ Service, Characteristic }) {
     async getTrunkState(which, callback) {
       // this.log("Getting current trunk state...")
       try {
-        const st = await this.getState();
-        if (st === "online") {
+        //if (st === "online")
+        if (this.isAsleep=== "online") {
           await this.getCarData()
           const vehicleState = this.vehicleData.vehicle_state;
           const res = which === 'frunk' ? !vehicleState.ft : !vehicleState.rt;
@@ -443,8 +444,8 @@ module.exports = function createTesla({ Service, Characteristic }) {
     
     async getBatteryLevel(callback) {
       try {
-        const st = await this.getState();
-        if (st === "online") {
+        //if (st === "online")
+        if (this.isAsleep=== "online") {
           await this.getCarDataPromise();
           const chargingState = this.vehicleData.charge_state;
           if (chargingState && chargingState.hasOwnProperty('battery_level')) {
@@ -458,7 +459,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
         } else {
           // Car is offline, callback false and update brightness value
           this.log('Car is offline.');
-          callback(null, !!this.batteryLevel);
+          callback(null, this.batteryLevel);
         }
       } catch (err) {
         this.log('Error getting battery level:', err);
@@ -528,7 +529,7 @@ module.exports = function createTesla({ Service, Characteristic }) {
       // this.log("Getting current target temperature...")
       try {
         st = await this.getState();
-        if (st === "online") {
+        if (this.isAsleep=== "online") {
           await this.getCarData()
           const climateState = this.vehicleData.climate_state;
           if (climateState && climateState.hasOwnProperty('driver_temp_setting')) {
@@ -569,8 +570,8 @@ module.exports = function createTesla({ Service, Characteristic }) {
 
     async getClimateState(what, callback) {
       // this.log("Getting current climate state...")
-      const st = await this.getState();
-      if (st === "online") {
+      //if (st === "online")
+      if (this.isAsleep=== "online") {
         try {
           await this.getCarDataPromise()
           const climateState = this.vehicleData.climate_state;
@@ -665,8 +666,8 @@ module.exports = function createTesla({ Service, Characteristic }) {
     }
 
     async getChargeDoorState(callback) {
-      const st = await this.getState();
-      if (st === "online") {
+      //if (st === "online")
+      if (this.isAsleep=== "online") {
         try {
           await this.getCarDataPromise();
           return callback(null, !this.vehicleData.charge_state.charge_port_door_open);
@@ -706,8 +707,8 @@ module.exports = function createTesla({ Service, Characteristic }) {
     }
 
     async getConnection(callback) {
-      const st = await this.getState();
-      if (st === "online") {
+      //if (st === "online")
+      if (this.isAsleep === "online") {
         return callback(null, true);
       }
       else{
@@ -717,8 +718,8 @@ module.exports = function createTesla({ Service, Characteristic }) {
 
     async setConnection(callback) {
       try {
-        const st = await this.getState();
-        if (st === "online") {
+        //if (st === "online")
+        if (this.isAsleep=== "online") {
           return callback(null, true);
         }
         else {
@@ -733,18 +734,17 @@ module.exports = function createTesla({ Service, Characteristic }) {
     }
     
 
-    async wakeUp(vehicleID, callback) {
+    async wakeUp(callback) {
       try {
         if (this.lastWakeupTS + 5000 < Date.now()) {
           this.lastWakeupTS = Date.now();
           await tjs.wakeUpAsync({
             authToken: this.token,
-            vehicleID
+            vehicleID: await this.getVehicleId(),
           });
-        }
-        
+        } 
         for (let i=0; i<20; i++) {
-          await new Promise(resolve => setTimeout(resolve, 5000));
+          await new Promise(resolve => setTimeout(resolve, 1000));
           this.log('checking if tesla woken up')
           const res2 = await tjs.vehiclesAsync({
             authToken: this.token,
@@ -754,7 +754,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
             this.log("awake");
             return callback(null) // success
           }
-          return Promise.resolve();
         }
         this.log("Error waking Tesla: took too long to wake up")
         return callback(new Error("Error waking Tesla: took too long to wake up"));
@@ -763,8 +762,6 @@ module.exports = function createTesla({ Service, Characteristic }) {
       }
     }
       
-    
-
     async getCarDataPromise() {
       this.getPromise = this.getPromise || this.getCarData();
       return this.getPromise;
